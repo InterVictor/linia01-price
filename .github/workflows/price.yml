@@ -1,0 +1,44 @@
+name: Линия01 — разбор прайса
+
+# Раз в сутки проверяет дату прайса для России на https://lbnsk.ru/prices/ и при новой дате разбирает PDF в data/linia01.json.
+# Файл публичный: его читает воркфлоу n8n «Парсинг прайса: linia01» по ссылке raw.githubusercontent.com (без токена).
+# Ручной запуск: Actions → Run workflow (force = разобрать заново, даже если дата не изменилась).
+on:
+  schedule:
+    - cron: '30 4 * * *'   # 04:30 UTC (07:30 Москва, 11:30 Новосибирск)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Разобрать заново, даже если дата прайса не изменилась'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: linia01-price
+  cancel-in-progress: false
+
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Разобрать прайс
+        run: python fetch_and_parse.py data/linia01.json ${{ inputs.force && '--force' || '' }}
+      - name: Сохранить в репозиторий, если изменилось
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/linia01.json
+          if git diff --cached --quiet; then
+            echo "Изменений нет"
+          else
+            git commit -m "data: прайс Линия01 от $(python -c "import json;print(json.load(open('data/linia01.json'))['price_date'])")"
+            git push
+          fi
